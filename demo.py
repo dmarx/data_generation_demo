@@ -54,18 +54,43 @@ def run_chain(chainer, f, proposal, start, n, take=1):
             samples.append(start)
     return samples, count
 
+def empirical_proposal(old, X=X, y=y, class_label=0, class_err_prob=0.05, n_change=1):
+    """
+    Generate proposals by independently sampling obvserved values for each feature from the data
+    to ensure that no feature takes a value it isn't capable of taking in the real world.
+    Samples are primarily constrained to the target class, but can be sampled other classes
+    with probability equal to class_err_prob.
+    """
+    n_feats = X.shape[1]
+    U = np.random.random(n_feats)
+    use_target_class = U > class_err_prob
+    #candidate = np.empty_like(X[0,:])
+    candidate = old.copy()
+    to_change = np.random.choice(n_feats, n_change)
+    for j, test in enumerate(use_target_class):
+        if j not in to_change:
+            continue
+        feasible_ix = np.where(y==class_label)[0]
+        if not test:
+            feasible_ix = np.where(y!=class_label)[0]
+        i = np.random.choice(feasible_ix)
+        candidate[j] = X[i,j]
+    return candidate
+
+
 np.random.seed(123)
 
 samples, _ = run_chain(chainer=metropolis,
                  f=class_cond_prob,
-                 proposal=lambda old: old + np.random.randn(1,10)/10,
+                 #proposal=lambda old: old + np.random.randn(1,10)/10,
+                 proposal=empirical_proposal,
                  start=X[y==0,:][0,:],
-                 n=10000,
+                 n=1000,
                  take=1
                  )
 
-burnin=1000
-samples = np.concatenate(samples[burnin:])
+burnin=100
+samples = np.vstack(samples[burnin:])
 y_pred = RFC.predict(samples)
 np.mean(y_pred==0) # 0.57
 

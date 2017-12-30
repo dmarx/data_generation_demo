@@ -9,10 +9,13 @@ RFC = RandomForestClassifier(n_estimators=80)
 RFC.fit(X,y)
 
 # Generate observation which maximizes a particular class probability
-def class_cond_prob(x, model=RFC, class_id=0):
+def class_cond_prob(x, model=RFC, class_id=0, class_err_prob=0.05):
     if len(x.shape) == 1:
         x = x.reshape(1,-1)
-    return model.predict_proba(x)[0,class_id]
+    score = class_err_prob
+    if model.predict(x) == model.classes_[class_id]:
+        score = model.predict_proba(x)[0,class_id]
+    return score
 
 #x0 = X[y==0,][0,None]
 #x_max_0 = minimize(class_spec_loss, np.ones([1,10]), method='Nelder-Mead')

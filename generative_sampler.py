@@ -2,8 +2,8 @@ import inspect
 
 import numpy as np
 from sklearn.base import ClassifierMixin
-#from sklearn.metrics import confusion_matrix
-#from sklearn.metrics import recall_score
+from sklearn.utils import check_array
+
 
 def is_fitted(model):
     """Checks if model object has any attributes ending with an underscore"""
@@ -66,10 +66,12 @@ class GenerativeSampler(object):
             raise AttributeError
         assert self.X is not None
         assert self.y is not None
+        assert self.target_class is not None
         if class_label is None:
             class_label = self.target_class
-        X, y = check_array(X), y
-        class_ix = y == self.target_class
+        X, y = check_array(self.X), self.y
+        class_ix = np.where(y == self.target_class)[0]
+        #print("class_ix shape", class_ix.shape)
         y_pred = self.model.predict(X[class_ix,:])
         return np.mean(y[class_ix] != y_pred)
     @property
@@ -89,6 +91,7 @@ class GenerativeSampler(object):
                 raise AttributeError
             if self.target_class is None:
                 # assume we have a binary classification and want to sample from the positive class
+                self.target_class = 1
                 self._class_id = 1
             else:
                 self._class_id = self._get_class_id(self.target_class)
@@ -139,6 +142,7 @@ class GenerativeSampler(object):
         """
         assert self.X is not None
         assert self.y is not None
+        assert self.target_class is not None
         X, y = check_array(X), y
         n_feats = X.shape[1]
         U = np.random.random(n_feats)
@@ -202,7 +206,11 @@ if __name__ is '__main__':
     RFC = RandomForestClassifier(n_estimators=80)
     RFC.fit(X,y)
 
-    sample_gen = GenerativeSampler(model=RFC, class_err_prob=0.05, use_empirical=False)
-    sample_gen.run_chain(n=10, start=np.random.randn(10))
+    _x0 = np.random.randn(10)
+    sample_gen = GenerativeSampler(model=RFC, target_class=0, class_err_prob=0.05, use_empirical=False)
+    test = sample_gen.run_chain(n=10, start=_x0)
 
-    sample_gen.random_walk_proposal(np.random.randn(10))
+    # Test that class_err_prob self populates correctly
+    sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=False)
+    print(sample_gen.class_err_prob)
+    test = sample_gen.run_chain(n=10, start=_x0)

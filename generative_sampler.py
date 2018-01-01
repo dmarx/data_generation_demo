@@ -233,3 +233,8 @@ if __name__ is '__main__':
     # Test empirical proposal
     sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=True)
     test = sample_gen.run_chain(n=5)
+
+    # Test unfitted model
+    RFC = RandomForestClassifier(n_estimators=80, oob_score=True)
+    sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=True)
+    test = sample_gen.run_chain(n=5)

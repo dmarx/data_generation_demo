@@ -45,9 +45,11 @@ class GenerativeSampler(object):
         if self._x0 is None:
             assert self.X is not None
             assert self.y is not None
-            X = np.check_array(self.X)
-            cand_ix = np.where(self.y == self.target_class)
-            self._x0 = X[np.random.choice(cand_ix),:]
+            X = check_array(self.X)
+            cand_ix = np.where(self.y == self.target_class)[0]
+            ix = np.random.choice(cand_ix)
+            #print("x0 ix", ix)
+            self._x0 = X[ix,:]
         return self._x0
     @property
     def class_err_prob(self):
@@ -64,6 +66,9 @@ class GenerativeSampler(object):
         """
         if not self.model_type is "classifier":
             raise AttributeError
+        if hasattr(self.model, "oob_score_"):
+            return 1-self.model.oob_score_
+
         assert self.X is not None
         assert self.y is not None
         assert self.target_class is not None
@@ -201,16 +206,26 @@ if __name__ is '__main__':
     from sklearn.datasets import make_blobs
     import matplotlib.pyplot as plt
 
-    X, y = make_blobs(n_samples=1000, n_features=10, centers=5, cluster_std=1.0)
+    np.random.seed(123)
+    X, y = make_blobs(n_samples=1000, n_features=10, centers=5, cluster_std=3)
 
-    RFC = RandomForestClassifier(n_estimators=80)
+    RFC = RandomForestClassifier(n_estimators=80, oob_score=True)
     RFC.fit(X,y)
+    print("oob_score_", RFC.oob_score_)
 
     _x0 = np.random.randn(10)
-    sample_gen = GenerativeSampler(model=RFC, target_class=0, class_err_prob=0.05, use_empirical=False)
+    sample_gen = GenerativeSampler(model=RFC, target_class=0, class_err_prob=1-RFC.oob_score_, use_empirical=False)
     test = sample_gen.run_chain(n=10, start=_x0)
 
     # Test that class_err_prob self populates correctly
     sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=False)
-    print(sample_gen.class_err_prob)
+    #assert sample_gen.class_err_prob == 0
+    print("calculated class_err_prob", sample_gen.class_err_prob) # For RFC this will always be 0 because it's calculated against the training data.
     test = sample_gen.run_chain(n=10, start=_x0)
+
+    # test that x0 self populates correctly
+    sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=False)
+    test = sample_gen.run_chain(n=10)
+    sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=False)
+    test = sample_gen.run_chain(n=10, start=_x0)
+    test = sample_gen.run_chain(n=10)

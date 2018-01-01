@@ -148,7 +148,7 @@ class GenerativeSampler(object):
         assert self.X is not None
         assert self.y is not None
         assert self.target_class is not None
-        X, y = check_array(X), y
+        X, y = check_array(self.X), self.y
         n_feats = X.shape[1]
         U = np.random.random(n_feats)
         use_target_class = U > self.class_err_prob
@@ -229,3 +229,7 @@ if __name__ is '__main__':
     sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=False)
     test = sample_gen.run_chain(n=10, start=_x0)
     test = sample_gen.run_chain(n=10)
+
+    # Test empirical proposal
+    sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=True)
+    test = sample_gen.run_chain(n=5)

@@ -17,6 +17,7 @@ class GenerativeSampler(object):
     def __init__(self,
                  model=None,
                  likelihood=None,
+                 log_likelihood=None,
                  proposal=None,
                  X=None,
                  y=None,
@@ -30,6 +31,7 @@ class GenerativeSampler(object):
                 ):
         self.model = model
         self.likelihood = likelihood
+        self.log_likelihood = log_likelihood
         self.proposal = proposal
         if X is not None:
             self.X = check_array(X)
@@ -130,6 +132,8 @@ class GenerativeSampler(object):
             self.likelihood = self.class_cond_prob
         else:
             raise NotImplementedError
+        if self.log_likelihood is None:
+            self.log_likelihood = lambda x: np.log(self.likelihood(x))
     def _ensure_fitted(self):
         self._msg("Ensuring model fitted")
         if not is_fitted(self.model):
@@ -181,15 +185,17 @@ class GenerativeSampler(object):
             candidate[j] = X[i,j]
         return candidate
 
-    def metropolis(self, old):
+    def metropolis(self, old, u):
         # via https://gist.github.com/alexsavio/9ecdc1279c9a7d697ed3
         """
         basic metropolis algorithm, according to the original,
         (1953 paper), needs symmetric proposal distribution.
         """
         new = self.proposal(old)
-        alpha = np.min([self.likelihood(new)/self.likelihood(old), 1])
-        u = np.random.uniform()
+        #alpha = np.min([self.likelihood(new)/self.likelihood(old), 1])
+        numr, denom = self.log_likelihood(new), self.log_likelihood(old)
+        alpha = np.exp(numr - denom)
+        #u = np.random.uniform()
         # _cnt_ indicates if new sample is used or not.
         cnt = 0
         if (u < alpha):
@@ -208,8 +214,9 @@ class GenerativeSampler(object):
             start = self.x0
         count = 0
         samples = [start]
+        U = np.random.uniform(size=n)
         for i in range(n):
-            start, c = self.metropolis(start)
+            start, c = self.metropolis(start, U[i])
             count = count + c
             if i%take is 0:
                 samples.append(start)
@@ -265,8 +272,10 @@ if __name__ is '__main__':
 
     iris = load_iris()
     X, y = iris.data, iris.target
-    RFC = RandomForestClassifier(n_estimators=80, oob_score=True, n_jobs=-1)
+    RFC = RandomForestClassifier(n_estimators=80, oob_score=True) # inexplicably, n_jobs=-1 makes this 40x slower
     RFC.fit(X, y)
+
+    n_generate = 10000
 
     iris_sample_gens = {}
     iris_samples = {}
@@ -274,5 +283,10 @@ if __name__ is '__main__':
         class_label = iris.target_names[i]
         iris_sample_gens[class_label] = GenerativeSampler(model=RFC, X=X, y=y, target_class=i, use_empirical=False, verbose=True)
         start = time.time()
-        iris_samples[class_label], cnt = iris_sample_gens[class_label].run_chain(n=20)
+        iris_samples[class_label], cnt = iris_sample_gens[class_label].run_chain(n=n_generate)
         print("elapsed:", time.time() - start)
+
+    #import cProfile
+    #cProfile.run('iris_sample_gens[class_label].run_chain(n=20)')
+
+    

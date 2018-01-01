@@ -1,3 +1,4 @@
+import datetime as dt
 import inspect
 
 import numpy as np
@@ -24,12 +25,14 @@ class GenerativeSampler(object):
                  class_err_prob=None,
                  cache=True,
                  use_empirical=True,
-                 n_change=1 # Number of features to modify when using empirical proposal
+                 n_change=1, # Number of features to modify when using empirical proposal
+                 verbose=False
                 ):
         self.model = model
         self.likelihood = likelihood
         self.proposal = proposal
-        self.X = X
+        if X is not None:
+            self.X = check_array(X)
         self.y = y
         self._x0 = x0
         self.target_class = target_class
@@ -37,15 +40,28 @@ class GenerativeSampler(object):
         self.cache = cache
         self.use_empirical = use_empirical
         self.n_change = n_change
+        self.verbose = verbose
+        if use_empirical:
+            assert self.X is not None
+            assert self.y is not None
+            assert self.target_class is not None
         self._set_proposal()
         self._set_likelihood()
         self._ensure_fitted()
+    def _msg(self, *args, **kwargs):
+        if not self.verbose:
+            return
+        ts = "[{:%Y-%m-%d %H:%M:%S}]".format(dt.datetime.now())
+        print(ts, *args)
+        for k,v in kwargs.items():
+            print("{} {}: {}".format(ts, k,v))
     @property
     def x0(self):
         if self._x0 is None:
+            self._msg("Selecting an x0")
             assert self.X is not None
             assert self.y is not None
-            X = check_array(self.X)
+            X = self.X
             cand_ix = np.where(self.y == self.target_class)[0]
             ix = np.random.choice(cand_ix)
             #print("x0 ix", ix)
@@ -64,6 +80,7 @@ class GenerativeSampler(object):
         """
         For classifiers, returns(FP+FN)/N.
         """
+        self._msg("Calculating class_err_prob")
         if not self.model_type is "classifier":
             raise AttributeError
         if hasattr(self.model, "oob_score_"):
@@ -74,7 +91,7 @@ class GenerativeSampler(object):
         assert self.target_class is not None
         if class_label is None:
             class_label = self.target_class
-        X, y = check_array(self.X), self.y
+        X, y = self.X, self.y
         class_ix = np.where(y == self.target_class)[0]
         #print("class_ix shape", class_ix.shape)
         y_pred = self.model.predict(X[class_ix,:])
@@ -88,10 +105,11 @@ class GenerativeSampler(object):
         return class_type
     def _get_class_id(self, class_label):
         self._ensure_fitted()
-        return np.where(self.model.classes_ == self.target_class)
+        return np.where(self.model.classes_ == self.target_class)[0]
     @property
     def class_id(self):
         if not hasattr(self, "_class_id"):
+            self._msg("Determining class_id")
             if self.model_type != "classifier":
                 raise AttributeError
             if self.target_class is None:
@@ -113,6 +131,7 @@ class GenerativeSampler(object):
         else:
             raise NotImplementedError
     def _ensure_fitted(self):
+        self._msg("Ensuring model fitted")
         if not is_fitted(self.model):
             assert self.X is not None
             assert self.y is not None
@@ -145,10 +164,7 @@ class GenerativeSampler(object):
         Samples are primarily constrained to the target class, but can be sampled other classes
         with probability equal to class_err_prob.
         """
-        assert self.X is not None
-        assert self.y is not None
-        assert self.target_class is not None
-        X, y = check_array(self.X), self.y
+        X, y = self.X, self.y
         n_feats = X.shape[1]
         U = np.random.random(n_feats)
         use_target_class = U > self.class_err_prob
@@ -198,7 +214,7 @@ class GenerativeSampler(object):
             if i%take is 0:
                 samples.append(start)
         self._x0 = start
-        return samples, count
+        return np.vstack(samples), count
 
 
 if __name__ is '__main__':
@@ -235,6 +251,28 @@ if __name__ is '__main__':
     test = sample_gen.run_chain(n=5)
 
     # Test unfitted model
-    RFC = RandomForestClassifier(n_estimators=80, oob_score=True)
+    RFC = RandomForestClassifier(n_estimators=80, oob_score=True, n_jobs=-1)
     sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=True)
     test = sample_gen.run_chain(n=5)
+
+    #############
+    # Iris demo #
+    #############
+
+    from sklearn.datasets import load_iris
+    from sklearn.decomposition import PCA
+    import time
+
+    iris = load_iris()
+    X, y = iris.data, iris.target
+    RFC = RandomForestClassifier(n_estimators=80, oob_score=True, n_jobs=-1)
+    RFC.fit(X, y)
+
+    iris_sample_gens = {}
+    iris_samples = {}
+    for i in range(3):
+        class_label = iris.target_names[i]
+        iris_sample_gens[class_label] = GenerativeSampler(model=RFC, X=X, y=y, target_class=i, use_empirical=False, verbose=True)
+        start = time.time()
+        iris_samples[class_label], cnt = iris_sample_gens[class_label].run_chain(n=20)
+        print("elapsed:", time.time() - start)

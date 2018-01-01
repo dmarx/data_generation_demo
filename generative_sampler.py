@@ -27,6 +27,7 @@ class GenerativeSampler(object):
                  cache=True,
                  use_empirical=True,
                  n_change=1, # Number of features to modify when using empirical proposal
+                 rw_std=1, # default std to use for random walk proposal
                  verbose=False
                 ):
         self.model = model
@@ -42,6 +43,7 @@ class GenerativeSampler(object):
         self.cache = cache
         self.use_empirical = use_empirical
         self.n_change = n_change
+        self.rw_std = rw_std
         self.verbose = verbose
         if use_empirical:
             assert self.X is not None
@@ -157,9 +159,15 @@ class GenerativeSampler(object):
             score = self.model.predict_proba(x)[0,class_id]
         #print("score", score)
         return score
-    def random_walk_proposal(self, old, std=1):
+    def random_walk_proposal(self, old, std=None):
         """Gaussian random walk"""
-        return old + np.random.randn(1,len(old))*std
+        if std is None:
+            std = self.rw_std
+        try:
+            n_feats = old.shape[1]
+        except IndexError:
+            n_feats = len(old)
+        return old + np.random.randn(1, n_feats)*std
     #def empirical_proposal(self, old, X=X, y=y, class_label=0, class_err_prob=0.05, n_change=1):
     def empirical_proposal(self, old):
         """
@@ -192,16 +200,15 @@ class GenerativeSampler(object):
         (1953 paper), needs symmetric proposal distribution.
         """
         new = self.proposal(old)
-        #alpha = np.min([self.likelihood(new)/self.likelihood(old), 1])
-        numr, denom = self.log_likelihood(new), self.log_likelihood(old)
-        alpha = np.exp(numr - denom)
+        alpha = np.min([self.likelihood(new)/self.likelihood(old), 1])
+        #numr, denom = self.log_likelihood(new), self.log_likelihood(old)
+        #alpha = np.exp(numr - denom)
         #u = np.random.uniform()
-        # _cnt_ indicates if new sample is used or not.
-        cnt = 0
+        accepted = 0
         if (u < alpha):
             old = new
-            cnt = 1
-        return old, cnt
+            accepted = 1
+        return old, accepted
 
     def run_chain(self, n, start=None, take=1):
         """
@@ -275,18 +282,50 @@ if __name__ is '__main__':
     RFC = RandomForestClassifier(n_estimators=80, oob_score=True) # inexplicably, n_jobs=-1 makes this 40x slower
     RFC.fit(X, y)
 
-    n_generate = 10000
+    n_generate = 1000
 
     iris_sample_gens = {}
     iris_samples = {}
+    #for i in range(3):
     for i in range(3):
         class_label = iris.target_names[i]
-        iris_sample_gens[class_label] = GenerativeSampler(model=RFC, X=X, y=y, target_class=i, use_empirical=False, verbose=True)
+        iris_sample_gens[class_label] = GenerativeSampler(model=RFC, X=X, y=y, target_class=i, class_err_prob=0, use_empirical=False, rw_std=.05, verbose=True)
+        #iris_sample_gens[class_label] = GenerativeSampler(model=RFC, X=X, y=y, target_class=i, use_empirical=True, rw_std=.1, verbose=True)
         start = time.time()
         iris_samples[class_label], cnt = iris_sample_gens[class_label].run_chain(n=n_generate)
         print("elapsed:", time.time() - start)
 
-    #import cProfile
-    #cProfile.run('iris_sample_gens[class_label].run_chain(n=20)')
+        #import cProfile
+        #cProfile.run('iris_sample_gens[class_label].run_chain(n=20)')
+        burn = 100
+        pca = PCA(n_components=2)
+        X1 = X[y==i,:]
+        X2 = iris_samples[class_label][burn:]
+        #X3 = np.vstack([X2, X1])
+        X3 = np.vstack([X1, X2])
+        #X3 = X2
+        pca.fit(X3)
+        X1_r = pca.transform(X1)
+        X2_r = pca.transform(X2)
 
-    
+        plt.scatter(X2_r[:,0], X2_r[:,1], color='r', alpha=.3)
+        plt.scatter(X1_r[:,0], X1_r[:,1], color='b', alpha=.3)
+        plt.show()
+
+        y_score = RFC.predict_proba(X2)[:,i]
+        plt.hist(y_score)
+        plt.show()
+
+    # When not using the empirical proposal, the chain seems to just pick a direction and run loose, way out of the set of feasible values.
+    # Need to constrain random walk to observed range.
+
+    # Also, I'm a little concerned that the empirical proposal is just walking the entire available grid
+
+    import seaborn as sns
+    import pandas as pd
+
+    sns.pairplot(pd.DataFrame(X2))
+    plt.show()
+
+    # why are the bivariate plots diagonal lines like this? Something is clearly not behaving as expected
+    # in the random walk proposal.

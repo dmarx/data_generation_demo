@@ -34,6 +34,7 @@ class GenerativeSampler(object):
                  n_change=1, # Number of features to modify when using empirical proposal
                  rw_std=1, # default std to use for random walk proposal
                  prior=None, # Funtion to compute P(X). Must be one of [None, 'kde', 'kde_heterog'] or a function
+                 prior_weight = 0.5,
                  log_prior=None,
                  verbose=False
                 ):
@@ -53,6 +54,7 @@ class GenerativeSampler(object):
         self.n_change = n_change
         self.rw_std = rw_std
         self.prior = prior
+        self.prior_weight = prior_weight
         self.log_prior = log_prior
         self.verbose = verbose
         if use_empirical:
@@ -260,11 +262,12 @@ class GenerativeSampler(object):
         accepted = 0
         samples = []
         U = np.random.uniform(size=n)
+        a, b = 1- self.prior_weight, self.prior_weight
         for i in range(n):
             x1 = self.proposal(x0)
             if i == 0:
-                denom = self.log_likelihood(x0) + self.log_prior(x0)
-            numr  = self.log_likelihood(x1) + self.log_prior(x1)
+                denom = a * self.log_likelihood(x0) + b * self.log_prior(x0)
+            numr  = a * self.log_likelihood(x1) + b * self.log_prior(x1)
             alpha = np.exp(numr - denom)
             if (U[i] < alpha):
                 x0, denom = x1, numr
@@ -302,7 +305,7 @@ if __name__ is '__main__':
         class_label = iris.target_names[i]
         if sampler is None:
             sampler = GenerativeSampler(model=RFC, X=X, y=y, target_class=i,
-                prior='kde', class_err_prob=0, use_empirical=False, rw_std=.05, verbose=True)
+                prior='kde', prior_weight=0.2, class_err_prob=0, use_empirical=False, rw_std=.05, verbose=True)
         sampler.set_target_class(i)
         iris_sample_gens[class_label] = copy.deepcopy(sampler)
         iris_samples[class_label], cnt = iris_sample_gens[class_label].run_chain(n=n_generate)

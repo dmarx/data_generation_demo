@@ -248,12 +248,7 @@ class GenerativeSampler(object):
             accepted = 1
         return old, accepted
 
-    def run_chain(self, n, x0=None, take=1):
-        """
-        start : is the initial start of the Markov Chain
-        n: length of the chain
-        take: thinning
-        """
+    def run_chain(self, n, x0=None):
         self._msg("Generating samples")
         if x0 is None:
             x0 = self.x0
@@ -269,9 +264,8 @@ class GenerativeSampler(object):
             if (U[i] < alpha):
                 x0, denom = x1, numr
                 accepted += 1
-            if i%take is 0:
-                samples.append(x0)
-        self._x0 = x0
+            samples.append(x0)
+        self._x0 = x0 # so we can easily pick up where we left off.
         return np.vstack(samples), accepted
 
 
@@ -310,9 +304,10 @@ if __name__ is '__main__':
         print("elapsed:", time.time() - start)
 
         burn = 100
+        thin = 10
         pca = PCA(n_components=2)
         X1 = X[y==i,:]
-        X2 = iris_samples[class_label][burn:]
+        X2 = iris_samples[class_label][burn::thin, :]
         X3 = np.vstack([X1, X2])
 
         pca.fit(X3)
@@ -328,14 +323,11 @@ if __name__ is '__main__':
         plt.show()
 
 
-    sns.pairplot(pd.DataFrame(X2))
-    plt.show()
-
     pca.fit(X)
     cmaps = ["Reds", "Blues", "Greens"]
     cmaps2 = ["red", "blue", "green"]
     for i in range(3):
         sns.kdeplot(pca.transform(X[y==i,:]), cmap=cmaps[i])
-        X_gen = iris_samples[iris.target_names[i]]
+        X_gen = iris_samples[iris.target_names[i]][burn::thin, :]
         sns.kdeplot(pca.transform(X_gen), cmap=sns.dark_palette(cmaps2[i], as_cmap=True))
     plt.show()

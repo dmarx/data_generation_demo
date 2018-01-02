@@ -10,6 +10,11 @@ def is_fitted(model):
     """Checks if model object has any attributes ending with an underscore"""
     return 0 < len( [k for k,v in inspect.getmembers(model) if k.endswith('_') and not k.startswith('__')] )
 
+def safe_log(x, buffer=1e-9):
+    if x == 0:
+        x = buffer
+    return np.log(x)
+
 class GenerativeSampler(object):
     """
     Given an sklearn model encoding P(Y|X), generates samples from P(X|Y) via MCMC.
@@ -74,7 +79,6 @@ class GenerativeSampler(object):
             X = self.X
             cand_ix = np.where(self.y == self.target_class)[0]
             ix = np.random.choice(cand_ix)
-            #print("x0 ix", ix)
             self._x0 = X[ix,:]
         return self._x0
     @property
@@ -103,7 +107,6 @@ class GenerativeSampler(object):
             class_label = self.target_class
         X, y = self.X, self.y
         class_ix = np.where(y == self.target_class)[0]
-        #print("class_ix shape", class_ix.shape)
         y_pred = self.model.predict(X[class_ix,:])
         return np.mean(y[class_ix] != y_pred)
     @property
@@ -144,7 +147,7 @@ class GenerativeSampler(object):
         else:
             raise NotImplementedError
         if self.log_likelihood is None:
-            self.log_likelihood = lambda x: np.log(self.likelihood(x))
+            self.log_likelihood = lambda x: safe_log(self.likelihood(x))
     def _set_prior(self):
         if self.prior is None:
             self.prior = lambda x: 1
@@ -159,7 +162,7 @@ class GenerativeSampler(object):
             else:
                 self._fit_kde_prior_sklearn()
         if self.log_prior is None:
-            self.log_prior = lambda x: np.log(self.prior(x))
+            self.log_prior = lambda x: safe_log(self.prior(x))
     def _fit_kde_prior_sklearn(self):
         from sklearn.neighbors import KernelDensity
         from sklearn.model_selection import GridSearchCV
@@ -172,6 +175,7 @@ class GenerativeSampler(object):
         self.log_prior = log_prior
         self.prior = lambda x: np.exp(self.log_prior(x))
     def _fit_kde_prior_stastmodels(self):
+        # statsmodels KDE is tolerant to heterogenous data
         raise NotImplementedError
         pass
     def _ensure_fitted(self):
@@ -181,13 +185,10 @@ class GenerativeSampler(object):
             assert self.y is not None
             self.model.fit(self.X, self.y)
 
-    #def class_cond_prob(self, x, model=RFC, class_id=0, class_err_prob=0.05):
     def class_cond_prob(self, x, class_id=None, class_err_prob=None):
-        #print(x)
         if class_id is None:
             class_id = self.class_id
         elif class_err_prob is None:
-            #class_err_prob = 0
             class_err_prob = 1e-9
         if class_err_prob is None:
             class_err_prob = self.class_err_prob
@@ -196,7 +197,6 @@ class GenerativeSampler(object):
         score = class_err_prob
         if self.model.predict(x) == self.model.classes_[class_id]:
             score = self.model.predict_proba(x)[0,class_id]
-        #print("score", score)
         return score
     def random_walk_proposal(self, old, std=None):
         """Gaussian random walk"""
@@ -207,7 +207,6 @@ class GenerativeSampler(object):
         except IndexError:
             n_feats = len(old)
         return old + np.random.randn(1, n_feats)*std
-    #def empirical_proposal(self, old, X=X, y=y, class_label=0, class_err_prob=0.05, n_change=1):
     def empirical_proposal(self, old):
         """
         Generate proposals by independently sampling obvserved values for each feature from the data
@@ -219,7 +218,6 @@ class GenerativeSampler(object):
         n_feats = X.shape[1]
         U = np.random.random(n_feats)
         use_target_class = U > self.class_err_prob
-        #candidate = np.empty_like(X[0,:])
         candidate = old.copy()
         to_change = np.random.choice(n_feats, self.n_change)
         for j, test in enumerate(use_target_class):
@@ -297,7 +295,7 @@ if __name__ is '__main__':
         class_label = iris.target_names[i]
         if sampler is None:
             sampler = GenerativeSampler(model=RFC, X=X, y=y, target_class=i,
-                prior='kde', class_err_prob=1e-9, use_empirical=False, rw_std=.05, verbose=True)
+                prior='kde', class_err_prob=0, use_empirical=False, rw_std=.05, verbose=True)
         sampler.set_target_class(i)
         iris_sample_gens[class_label] = copy.deepcopy(sampler)
         iris_samples[class_label], cnt = iris_sample_gens[class_label].run_chain(n=n_generate)

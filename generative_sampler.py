@@ -72,6 +72,10 @@ class GenerativeSampler(object):
             print("{} {}: {}".format(ts, k,v))
     @property
     def x0(self):
+        """
+        If a starting value for the chain was not specified, use a random observation
+        from the target class.
+        """
         if self._x0 is None:
             self._msg("Selecting an x0")
             assert self.X is not None
@@ -121,10 +125,17 @@ class GenerativeSampler(object):
         return np.where(self.model.classes_ == class_label)[0]
     @property
     def class_id(self):
+        """Returns the index of the class label, for use with estimator.predict_proba"""
         if not hasattr(self, "_class_id"):
             self.set_target_class(self.target_class)
         return self._class_id
     def set_target_class(self, target_class):
+        """
+        Use this method to change the target_class of an instance. Alternatively,
+        you could create a separate instance for each target class, but if you are
+        using a KDE prior then each instance will repeat the KDE fitting operation,
+        which could be expensive.
+        """
         self._msg("Determining class_id")
         if self.model_type != "classifier":
             raise AttributeError
@@ -164,6 +175,10 @@ class GenerativeSampler(object):
         if self.log_prior is None:
             self.log_prior = lambda x: safe_log(self.prior(x))
     def _fit_kde_prior_sklearn(self):
+        """
+        Fits a KDE to be used for P(X). The bandwidth is determined by grid search over
+        np.linspace(0.1, 1.0, 30) using 10-fold CV.
+        """
         from sklearn.neighbors import KernelDensity
         from sklearn.model_selection import GridSearchCV
         grid = GridSearchCV(KernelDensity(), {'bandwidth': np.linspace(0.1, 1.0, 30)}, cv=10, refit=True)
@@ -175,7 +190,11 @@ class GenerativeSampler(object):
         self.log_prior = log_prior
         self.prior = lambda x: np.exp(self.log_prior(x))
     def _fit_kde_prior_stastmodels(self):
-        # statsmodels KDE is tolerant to heterogenous data
+        """
+        Unlike the sklearn KDE, statsmodels.nonparametric.kernel_density.KDEMultivariate
+        supports heterogenous data. Bandwidth is fitted via LOO-CV, which is going to be
+        expensive with large datasets.
+        """
         raise NotImplementedError
         pass
     def _ensure_fitted(self):
@@ -186,6 +205,11 @@ class GenerativeSampler(object):
             self.model.fit(self.X, self.y)
 
     def class_cond_prob(self, x, class_id=None, class_err_prob=None):
+        """
+        Returns the class-conditional likelihood for x given by the model. If the
+        model does not classify x as belonging to the conditioning class, then
+        class_err_prob is returned instead.
+        """
         if class_id is None:
             class_id = self.class_id
         elif class_err_prob is None:

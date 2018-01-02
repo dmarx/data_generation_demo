@@ -291,7 +291,7 @@ if __name__ is '__main__':
     RFC = RandomForestClassifier(n_estimators=80, oob_score=True) # inexplicably, n_jobs=-1 makes this 40x slower
     RFC.fit(X, y)
 
-    n_generate = 1000
+    n_generate = 5000
 
     iris_sample_gens = {}
     iris_samples = {}
@@ -309,7 +309,7 @@ if __name__ is '__main__':
         print("elapsed:", time.time() - start)
 
         burn = 100
-        thin = 10
+        thin = 20
         pca = PCA(n_components=2)
         X1 = X[y==i,:]
         X2 = iris_samples[class_label][burn::thin, :]
@@ -336,3 +336,14 @@ if __name__ is '__main__':
         X_gen = iris_samples[iris.target_names[i]][burn::thin, :]
         sns.kdeplot(pca.transform(X_gen), cmap=sns.dark_palette(cmaps2[i], as_cmap=True))
     plt.show()
+
+    # Our posterior doesn't look super different from our prior. Not sure if this is good or bad.
+    # Maybe I need to demo this with messier data?
+    for i in range(3):
+        f, axes = plt.subplots(1, 4)#, sharex='col', sharey='row')
+        #axes = np.concatenate(axes)
+        X_gen = iris_samples[iris.target_names[i]][burn::thin, :]
+        for j in range(4):
+            sns.kdeplot(X_gen[:,j], ax=axes[j])
+            sns.kdeplot(X[y==i,j], ax=axes[j], color='r')
+        plt.show()

@@ -5,7 +5,6 @@ import numpy as np
 from sklearn.base import ClassifierMixin
 from sklearn.utils import check_array
 
-
 def is_fitted(model):
     """Checks if model object has any attributes ending with an underscore"""
     return 0 < len( [k for k,v in inspect.getmembers(model) if k.endswith('_') and not k.startswith('__')] )
@@ -28,12 +27,15 @@ class GenerativeSampler(object):
                  use_empirical=True,
                  n_change=1, # Number of features to modify when using empirical proposal
                  rw_std=1, # default std to use for random walk proposal
+                 prior=None, # Funtion to compute P(X). Must be one of [None, 'kde', 'kde_heterog'] or a function
+                 log_prior=None,
                  verbose=False
                 ):
         self.model = model
         self.likelihood = likelihood
         self.log_likelihood = log_likelihood
         self.proposal = proposal
+        self.X = X
         if X is not None:
             self.X = check_array(X)
         self.y = y
@@ -44,6 +46,8 @@ class GenerativeSampler(object):
         self.use_empirical = use_empirical
         self.n_change = n_change
         self.rw_std = rw_std
+        self.prior = prior
+        self.log_prior = log_prior
         self.verbose = verbose
         if use_empirical:
             assert self.X is not None
@@ -51,6 +55,7 @@ class GenerativeSampler(object):
             assert self.target_class is not None
         self._set_proposal()
         self._set_likelihood()
+        self._set_prior()
         self._ensure_fitted()
     def _msg(self, *args, **kwargs):
         if not self.verbose:
@@ -136,6 +141,35 @@ class GenerativeSampler(object):
             raise NotImplementedError
         if self.log_likelihood is None:
             self.log_likelihood = lambda x: np.log(self.likelihood(x))
+    def _set_prior(self):
+        if self.prior is None:
+            self.prior = lambda x: 1
+        elif type(self.prior) == str:
+            p_str = self.prior.lower()
+            if not p_str.startswith('kde'):
+                 raise NotImplementedError
+            assert self.X is not None
+            self._msg("Fitting KDE to approximate P(X)")
+            if p_str.endswith('heterog'):
+                self._fit_kde_prior_stastmodels()
+            else:
+                self._fit_kde_prior_sklearn()
+        if self.log_prior is None:
+            self.log_prior = lambda x: np.log(self.prior(x))
+    def _fit_kde_prior_sklearn(self):
+        from sklearn.neighbors import KernelDensity
+        from sklearn.model_selection import GridSearchCV
+        grid = GridSearchCV(KernelDensity(), {'bandwidth': np.linspace(0.1, 1.0, 30)}, cv=10, refit=True)
+        kde = grid.fit(X).best_estimator_
+        def log_prior(x):
+            if x.ndim == 1:
+                x = x.reshape(1,-1)
+            return kde.score_samples(x)
+        self.log_prior = log_prior
+        self.prior = lambda x: np.exp(self.log_prior(x))
+    def _fit_kde_prior_stastmodels(self):
+        raise NotImplementedError
+        pass
     def _ensure_fitted(self):
         self._msg("Ensuring model fitted")
         if not is_fitted(self.model):
@@ -200,9 +234,12 @@ class GenerativeSampler(object):
         (1953 paper), needs symmetric proposal distribution.
         """
         new = self.proposal(old)
-        alpha = np.min([self.likelihood(new)/self.likelihood(old), 1])
-        #numr, denom = self.log_likelihood(new), self.log_likelihood(old)
-        #alpha = np.exp(numr - denom)
+        #numr = self.likelihood(new) * self.prior(new)
+        #denom = self.likelihood(old) * self.prior(old)
+        #alpha = np.min([numr/denom, 1])
+        numr  = self.log_likelihood(new) + self.log_prior(new)
+        denom = self.log_likelihood(old) + self.log_prior(old)
+        alpha = np.exp(numr - denom)
         #u = np.random.uniform()
         accepted = 0
         if (u < alpha):
@@ -289,7 +326,8 @@ if __name__ is '__main__':
     #for i in range(3):
     for i in range(3):
         class_label = iris.target_names[i]
-        iris_sample_gens[class_label] = GenerativeSampler(model=RFC, X=X, y=y, target_class=i, class_err_prob=0, use_empirical=False, rw_std=.05, verbose=True)
+        iris_sample_gens[class_label] = GenerativeSampler(model=RFC, X=X, y=y, target_class=i,
+            prior='kde', class_err_prob=0, use_empirical=False, rw_std=.05, verbose=True)
         #iris_sample_gens[class_label] = GenerativeSampler(model=RFC, X=X, y=y, target_class=i, use_empirical=True, rw_std=.1, verbose=True)
         start = time.time()
         iris_samples[class_label], cnt = iris_sample_gens[class_label].run_chain(n=n_generate)
@@ -327,5 +365,10 @@ if __name__ is '__main__':
     sns.pairplot(pd.DataFrame(X2))
     plt.show()
 
-    # why are the bivariate plots diagonal lines like this? Something is clearly not behaving as expected
-    # in the random walk proposal.
+    pca.fit(X)
+    cmaps = ["Reds", "Blues", "Greens"]
+    for i in range(3):
+        sns.kdeplot(pca.transform(X[y==i,:]), cmap=cmaps[i])
+        X_gen = iris_samples[iris.target_names[i]]
+        sns.kdeplot(pca.transform(X_gen), cmap=sns.dark_palette("purple", as_cmap=True))
+    plt.show()

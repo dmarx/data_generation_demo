@@ -114,20 +114,23 @@ class GenerativeSampler(object):
         return class_type
     def _get_class_id(self, class_label):
         self._ensure_fitted()
-        return np.where(self.model.classes_ == self.target_class)[0]
+        return np.where(self.model.classes_ == class_label)[0]
     @property
     def class_id(self):
         if not hasattr(self, "_class_id"):
-            self._msg("Determining class_id")
-            if self.model_type != "classifier":
-                raise AttributeError
-            if self.target_class is None:
-                # assume we have a binary classification and want to sample from the positive class
-                self.target_class = 1
-                self._class_id = 1
-            else:
-                self._class_id = self._get_class_id(self.target_class)
+            self.set_target_class(self.target_class)
         return self._class_id
+    def set_target_class(self, target_class):
+        self._msg("Determining class_id")
+        if self.model_type != "classifier":
+            raise AttributeError
+        if target_class is None:
+            self._msg("target_class not provided, assuming binary classification and using target_class = 1")
+            self.target_class = 1
+            self._class_id = 1
+        else:
+            self.target_class = target_class
+            self._class_id = self._get_class_id(target_class)
     def _set_proposal(self):
         if self.proposal is None:
             if self.use_empirical:
@@ -254,6 +257,7 @@ class GenerativeSampler(object):
         _take_ thinning
         """
         # via https://gist.github.com/alexsavio/9ecdc1279c9a7d697ed3
+        self._msg("Generating samples")
         if start is None:
             start = self.x0
         count = 0
@@ -324,12 +328,17 @@ if __name__ is '__main__':
     iris_sample_gens = {}
     iris_samples = {}
     #for i in range(3):
+    import copy
+    sampler = None
     for i in range(3):
-        class_label = iris.target_names[i]
-        iris_sample_gens[class_label] = GenerativeSampler(model=RFC, X=X, y=y, target_class=i,
-            prior='kde', class_err_prob=0, use_empirical=False, rw_std=.05, verbose=True)
-        #iris_sample_gens[class_label] = GenerativeSampler(model=RFC, X=X, y=y, target_class=i, use_empirical=True, rw_std=.1, verbose=True)
         start = time.time()
+        class_label = iris.target_names[i]
+        if sampler is None:
+            sampler = GenerativeSampler(model=RFC, X=X, y=y, target_class=i,
+                prior='kde', class_err_prob=0, use_empirical=False, rw_std=.05, verbose=True)
+        sampler.set_target_class(i)
+        iris_sample_gens[class_label] = copy.deepcopy(sampler)
+        #iris_sample_gens[class_label] = GenerativeSampler(model=RFC, X=X, y=y, target_class=i, use_empirical=True, rw_std=.1, verbose=True)
         iris_samples[class_label], cnt = iris_sample_gens[class_label].run_chain(n=n_generate)
         print("elapsed:", time.time() - start)
 

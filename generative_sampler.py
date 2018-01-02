@@ -253,23 +253,6 @@ class GenerativeSampler(object):
             i = np.random.choice(feasible_ix)
             candidate[j] = X[i,j]
         return candidate
-
-    def metropolis(self, old, u):
-        # via https://gist.github.com/alexsavio/9ecdc1279c9a7d697ed3
-        """
-        basic metropolis algorithm, according to the original,
-        (1953 paper), needs symmetric proposal distribution.
-        """
-        new = self.proposal(old)
-        numr  = self.log_likelihood(new) + self.log_prior(new)
-        denom = self.log_likelihood(old) + self.log_prior(old)
-        alpha = np.exp(numr - denom)
-        accepted = 0
-        if (u < alpha):
-            old = new
-            accepted = 1
-        return old, accepted
-
     def run_chain(self, n, x0=None):
         self._msg("Generating samples")
         if x0 is None:

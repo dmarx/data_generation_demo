@@ -246,31 +246,30 @@ class GenerativeSampler(object):
             accepted = 1
         return old, accepted
 
-    def run_chain(self, n, start=None, take=1):
+    def run_chain(self, n, x0=None, take=1):
         """
         start : is the initial start of the Markov Chain
         n: length of the chain
         take: thinning
         """
         self._msg("Generating samples")
-        if start is None:
-            start = self.x0
+        if x0 is None:
+            x0 = self.x0
         accepted = 0
         samples = []
-        old = start
         U = np.random.uniform(size=n)
         for i in range(n):
-            new = self.proposal(old)
+            x1 = self.proposal(x0)
             if i == 0:
-                denom = self.log_likelihood(old) + self.log_prior(old)
-            numr  = self.log_likelihood(new) + self.log_prior(new)
+                denom = self.log_likelihood(x0) + self.log_prior(x0)
+            numr  = self.log_likelihood(x1) + self.log_prior(x1)
             alpha = np.exp(numr - denom)
             if (U[i] < alpha):
-                old, denom = new, numr
+                x0, denom = x1, numr
                 accepted += 1
             if i%take is 0:
-                samples.append(old)
-        self._x0 = start
+                samples.append(x0)
+        self._x0 = x0
         return np.vstack(samples), accepted
 
 
@@ -288,19 +287,19 @@ if __name__ is '__main__':
 
     _x0 = np.random.randn(10)
     sample_gen = GenerativeSampler(model=RFC, target_class=0, class_err_prob=1-RFC.oob_score_, use_empirical=False)
-    test = sample_gen.run_chain(n=10, start=_x0)
+    test = sample_gen.run_chain(n=10, x0=_x0)
 
     # Test that class_err_prob self populates correctly
     sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=False)
     #assert sample_gen.class_err_prob == 0
     print("calculated class_err_prob", sample_gen.class_err_prob) # For RFC this will always be 0 because it's calculated against the training data.
-    test = sample_gen.run_chain(n=10, start=_x0)
+    test = sample_gen.run_chain(n=10, x0=_x0)
 
     # test that x0 self populates correctly
     sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=False)
     test = sample_gen.run_chain(n=10)
     sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=False)
-    test = sample_gen.run_chain(n=10, start=_x0)
+    test = sample_gen.run_chain(n=10, x0=_x0)
     test = sample_gen.run_chain(n=10)
 
     # Test empirical proposal

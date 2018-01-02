@@ -1,3 +1,4 @@
+import copy
 import datetime as dt
 import inspect
 
@@ -186,7 +187,8 @@ class GenerativeSampler(object):
         if class_id is None:
             class_id = self.class_id
         elif class_err_prob is None:
-            class_err_prob = 0
+            #class_err_prob = 0
+            class_err_prob = 1e-9
         if class_err_prob is None:
             class_err_prob = self.class_err_prob
         if x.ndim == 1:
@@ -274,50 +276,16 @@ class GenerativeSampler(object):
 
 
 if __name__ is '__main__':
-    from sklearn.ensemble import RandomForestClassifier
-    from sklearn.datasets import make_blobs
+    import time
+
     import matplotlib.pyplot as plt
-
-    np.random.seed(123)
-    X, y = make_blobs(n_samples=1000, n_features=10, centers=5, cluster_std=3)
-
-    RFC = RandomForestClassifier(n_estimators=80, oob_score=True)
-    RFC.fit(X,y)
-    print("oob_score_", RFC.oob_score_)
-
-    _x0 = np.random.randn(10)
-    sample_gen = GenerativeSampler(model=RFC, target_class=0, class_err_prob=1-RFC.oob_score_, use_empirical=False)
-    test = sample_gen.run_chain(n=10, x0=_x0)
-
-    # Test that class_err_prob self populates correctly
-    sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=False)
-    #assert sample_gen.class_err_prob == 0
-    print("calculated class_err_prob", sample_gen.class_err_prob) # For RFC this will always be 0 because it's calculated against the training data.
-    test = sample_gen.run_chain(n=10, x0=_x0)
-
-    # test that x0 self populates correctly
-    sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=False)
-    test = sample_gen.run_chain(n=10)
-    sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=False)
-    test = sample_gen.run_chain(n=10, x0=_x0)
-    test = sample_gen.run_chain(n=10)
-
-    # Test empirical proposal
-    sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=True)
-    test = sample_gen.run_chain(n=5)
-
-    # Test unfitted model
-    RFC = RandomForestClassifier(n_estimators=80, oob_score=True, n_jobs=-1)
-    sample_gen = GenerativeSampler(model=RFC, X=X, y=y, target_class=0, use_empirical=True)
-    test = sample_gen.run_chain(n=5)
-
-    #############
-    # Iris demo #
-    #############
-
+    import pandas as pd
+    import seaborn as sns
     from sklearn.datasets import load_iris
     from sklearn.decomposition import PCA
-    import time
+    from sklearn.ensemble import RandomForestClassifier
+
+    np.random.seed(123)
 
     iris = load_iris()
     X, y = iris.data, iris.target
@@ -328,30 +296,25 @@ if __name__ is '__main__':
 
     iris_sample_gens = {}
     iris_samples = {}
-    #for i in range(3):
-    import copy
+
     sampler = None
     for i in range(3):
         start = time.time()
         class_label = iris.target_names[i]
         if sampler is None:
             sampler = GenerativeSampler(model=RFC, X=X, y=y, target_class=i,
-                prior='kde', class_err_prob=0, use_empirical=False, rw_std=.05, verbose=True)
+                prior='kde', class_err_prob=1e-9, use_empirical=False, rw_std=.05, verbose=True)
         sampler.set_target_class(i)
         iris_sample_gens[class_label] = copy.deepcopy(sampler)
-        #iris_sample_gens[class_label] = GenerativeSampler(model=RFC, X=X, y=y, target_class=i, use_empirical=True, rw_std=.1, verbose=True)
         iris_samples[class_label], cnt = iris_sample_gens[class_label].run_chain(n=n_generate)
         print("elapsed:", time.time() - start)
 
-        #import cProfile
-        #cProfile.run('iris_sample_gens[class_label].run_chain(n=20)')
         burn = 100
         pca = PCA(n_components=2)
         X1 = X[y==i,:]
         X2 = iris_samples[class_label][burn:]
-        #X3 = np.vstack([X2, X1])
         X3 = np.vstack([X1, X2])
-        #X3 = X2
+
         pca.fit(X3)
         X1_r = pca.transform(X1)
         X2_r = pca.transform(X2)
@@ -364,13 +327,6 @@ if __name__ is '__main__':
         plt.hist(y_score)
         plt.show()
 
-    # When not using the empirical proposal, the chain seems to just pick a direction and run loose, way out of the set of feasible values.
-    # Need to constrain random walk to observed range.
-
-    # Also, I'm a little concerned that the empirical proposal is just walking the entire available grid
-
-    import seaborn as sns
-    import pandas as pd
 
     sns.pairplot(pd.DataFrame(X2))
     plt.show()

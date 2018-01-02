@@ -237,13 +237,9 @@ class GenerativeSampler(object):
         (1953 paper), needs symmetric proposal distribution.
         """
         new = self.proposal(old)
-        #numr = self.likelihood(new) * self.prior(new)
-        #denom = self.likelihood(old) * self.prior(old)
-        #alpha = np.min([numr/denom, 1])
         numr  = self.log_likelihood(new) + self.log_prior(new)
         denom = self.log_likelihood(old) + self.log_prior(old)
         alpha = np.exp(numr - denom)
-        #u = np.random.uniform()
         accepted = 0
         if (u < alpha):
             old = new
@@ -252,24 +248,30 @@ class GenerativeSampler(object):
 
     def run_chain(self, n, start=None, take=1):
         """
-        _start_ is the initial start of the Markov Chain
-        _n_ length of the chain
-        _take_ thinning
+        start : is the initial start of the Markov Chain
+        n: length of the chain
+        take: thinning
         """
-        # via https://gist.github.com/alexsavio/9ecdc1279c9a7d697ed3
         self._msg("Generating samples")
         if start is None:
             start = self.x0
-        count = 0
-        samples = [start]
+        accepted = 0
+        samples = []
+        old = start
         U = np.random.uniform(size=n)
         for i in range(n):
-            start, c = self.metropolis(start, U[i])
-            count = count + c
+            new = self.proposal(old)
+            if i == 0:
+                denom = self.log_likelihood(old) + self.log_prior(old)
+            numr  = self.log_likelihood(new) + self.log_prior(new)
+            alpha = np.exp(numr - denom)
+            if (U[i] < alpha):
+                old, denom = new, numr
+                accepted += 1
             if i%take is 0:
-                samples.append(start)
+                samples.append(old)
         self._x0 = start
-        return np.vstack(samples), count
+        return np.vstack(samples), accepted
 
 
 if __name__ is '__main__':

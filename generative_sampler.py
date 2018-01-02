@@ -367,8 +367,9 @@ if __name__ is '__main__':
 
     pca.fit(X)
     cmaps = ["Reds", "Blues", "Greens"]
+    cmaps2 = ["red", "blue", "green"]
     for i in range(3):
         sns.kdeplot(pca.transform(X[y==i,:]), cmap=cmaps[i])
         X_gen = iris_samples[iris.target_names[i]]
-        sns.kdeplot(pca.transform(X_gen), cmap=sns.dark_palette("purple", as_cmap=True))
+        sns.kdeplot(pca.transform(X_gen), cmap=sns.dark_palette(cmaps2[i], as_cmap=True))
     plt.show()

@@ -192,7 +192,7 @@ class GenerativeSampler(object):
         from sklearn.neighbors import KernelDensity
         from sklearn.model_selection import GridSearchCV
         grid = GridSearchCV(KernelDensity(), {'bandwidth': np.linspace(0.1, 1.0, 30)}, cv=10, refit=True)
-        kde = grid.fit(X).best_estimator_
+        kde = grid.fit(self.X).best_estimator_
         def log_prior(x):
             if x.ndim == 1:
                 x = x.reshape(1,-1)

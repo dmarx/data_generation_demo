@@ -169,6 +169,7 @@ class GenerativeSampler(object):
     def _set_prior(self):
         if self.prior is None:
             self.prior = lambda x: 1
+            self.log_prior = lambda x: 0
         elif type(self.prior) == str:
             assert self.X is not None
             p_str = self.prior.lower()

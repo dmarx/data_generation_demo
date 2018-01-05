@@ -11,8 +11,13 @@ def is_fitted(model):
     return 0 < len( [k for k,v in inspect.getmembers(model) if k.endswith('_') and not k.startswith('__')] )
 
 def safe_log(x, buffer=1e-9):
-    if x == 0:
-        x = buffer
+    try:
+        if x == 0:
+            x = buffer
+    except ValueError:
+        print("ARRAY PASSED TO SAFE_LOG")
+        print(x.shape)
+        x[x==0] = buffer
     return np.log(x)
 
 class GenerativeSampler(object):
@@ -33,7 +38,7 @@ class GenerativeSampler(object):
                  use_empirical=True,
                  n_change=1, # Number of features to modify when using empirical proposal
                  rw_std=1, # default std to use for random walk proposal
-                 prior=None, # Funtion to compute P(X). Must be one of [None, 'kde', 'kde_heterog'] or a function
+                 prior=None, # Funtion to compute P(X). Must be one of [None, 'kde', 'kde_heterog', 'cade'] or a function
                  prior_weight = 0.5,
                  log_prior=None,
                  verbose=False
@@ -165,17 +170,19 @@ class GenerativeSampler(object):
         if self.prior is None:
             self.prior = lambda x: 1
         elif type(self.prior) == str:
-            p_str = self.prior.lower()
-            if not p_str.startswith('kde'):
-                 raise NotImplementedError
             assert self.X is not None
-            self._msg("Fitting KDE to approximate P(X)")
-            if p_str.endswith('heterog'):
+            p_str = self.prior.lower()
+            self._msg("Fitting", p_str," to approximate P(X)")
+            if p_str == 'cade':
+                self._fit_cade_prior()
+            elif p_str == 'kde':
+                self._fit_kde_prior_sklearn()
+            elif p_str == 'kde_heterog':
                 self._fit_kde_prior_stastmodels()
             else:
-                self._fit_kde_prior_sklearn()
-        if self.log_prior is None:
-            self.log_prior = lambda x: safe_log(self.prior(x))
+                 raise NotImplementedError
+            if self.log_prior is None:
+                self.log_prior = lambda x: safe_log(self.prior(x))
     def _fit_kde_prior_sklearn(self):
         """
         Fits a KDE to be used for P(X). The bandwidth is determined by grid search over
@@ -275,6 +282,36 @@ class GenerativeSampler(object):
             samples.append(x0)
         self._x0 = x0 # so we can easily pick up where we left off.
         return np.vstack(samples), accepted
+    def _fit_cade_prior(self, base_estimator=None):
+        """
+        This doesn't seem to work particularly well, but it might at least be an interesting
+        option for heterogenous data.
+        """
+        # A big issue here is probably that the empirical proposal won't take us "out of the box"
+        # of the data far enough, which is really what we need here.
+        if base_estimator is None:
+            base_estimator = RandomForestClassifier(n_estimators=80)
+        X_sim, X = [], self.X
+        old_n_change = self.n_change
+        self.n_change = X.shape[1]
+        n = X.shape[0]
+        for i in range(n):
+            x0 = X[np.random.choice(n),:]
+            x1 = self.empirical_proposal(x0)
+            X_sim.append(x1)
+        self.n_change = old_n_change
+        X_sim = np.vstack(X_sim)
+        X = np.vstack([X, X_sim])
+        y = np.concatenate([np.ones(n), np.zeros(n)])
+        cade = base_estimator.fit(X, y)
+        def cade_prior(x):
+            if x.ndim == 1:
+                x = x.reshape(1,-1)
+            return cade.predict_proba(x)[:,1]
+        self.prior = cade_prior
+        self.log_prior = lambda x: safe_log(self.prior(x))
+
+
 
 
 if __name__ is '__main__':
@@ -304,8 +341,8 @@ if __name__ is '__main__':
         start = time.time()
         class_label = iris.target_names[i]
         if sampler is None:
-            sampler = GenerativeSampler(model=RFC, X=X, y=y, target_class=i,
-                prior='kde', prior_weight=0.2, class_err_prob=0, use_empirical=False, rw_std=.05, verbose=True)
+            sampler = GenerativeSampler(model=RFC, X=X, y=y, target_class=i, prior='kde',
+                prior_weight=0.5, class_err_prob=0, use_empirical=False, rw_std=.05, verbose=True)
         sampler.set_target_class(i)
         iris_sample_gens[class_label] = copy.deepcopy(sampler)
         iris_samples[class_label], cnt = iris_sample_gens[class_label].run_chain(n=n_generate)
